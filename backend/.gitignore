@@ -1,0 +1,31 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Virtual environment directories
+venv/
+.venv/
+
+# Dependency metadata and build directories
+*.egg-info/
+dist/
+build/
+
+# Environment variables and sensitive information
+.env
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Test artifacts
+.pytest_cache/
+coverage.xml
+htmlcov/
+
+
+
