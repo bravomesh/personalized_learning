@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { GradeSelector } from './components/GradeSelector.tsx'
 import { SubjectPicker } from './components/SubjectPicker.tsx'
 import { ChatInterface } from './components/ChatInterface.tsx'
-import React from 'react'
+
 
 const SUBJECTS = ["mathematics", "chemistry", "biology", "physics", "english"]
 
