@@ -5,26 +5,39 @@ class SafetyLayer:
         # Allowed subjects
         self.allowed_subjects = ["mathematics", "chemistry", "biology", "physics", "english"]
         
+        self.educational_keywords = [
+            "math", "science", "chemistry", "biology", "physics", "english",
+            "learn", "teach", "study", "explain", "define", "calculate"
+        ]
+
+        
         # Load a pre-trained model for educational content classification
-        self.classifier = pipeline(
-            "text-classification",
-            model="distilbert-base-uncased",
-            tokenizer="distilbert-base-uncased"
-        )
+        # self.classifier = pipeline(
+        #     "text-classification",
+        #     model="distilbert-base-uncased",
+        #     tokenizer="distilbert-base-uncased"
+        # )
+
+    # def is_educational(self, query: str) -> bool:
+    #     """
+    #     Checks if the query is educational using a pre-trained model.
+    #     """
+    #     try:
+    #         # Classify the query
+    #         result = self.classifier(query)[0]
+    #         # Assume label "EDUCATIONAL" for educational content
+    #         return result["label"] == "EDUCATIONAL" and result["score"] > 0.7
+    #     except Exception:
+    #         # Fallback to a simple keyword-based check if the model fails
+    #         educational_keywords = ["math", "science", "chemistry", "biology", "physics", "english", "learn", "teach", "study"]
+    #         return any(keyword in query.lower() for keyword in educational_keywords)
 
     def is_educational(self, query: str) -> bool:
         """
-        Checks if the query is educational using a pre-trained model.
+        Checks if the query contains educational keywords.
         """
-        try:
-            # Classify the query
-            result = self.classifier(query)[0]
-            # Assume label "EDUCATIONAL" for educational content
-            return result["label"] == "EDUCATIONAL" and result["score"] > 0.7
-        except Exception:
-            # Fallback to a simple keyword-based check if the model fails
-            educational_keywords = ["math", "science", "chemistry", "biology", "physics", "english", "learn", "teach", "study"]
-            return any(keyword in query.lower() for keyword in educational_keywords)
+        query = query.lower()
+        return any(keyword in query for keyword in self.educational_keywords)
 
     def validate_query(self, query: str, subject: str) -> bool:
         """
