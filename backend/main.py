@@ -74,3 +74,51 @@ async def ask_question(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+    
+    
+class FlashCardRequest(BaseModel):
+    subject: str
+    grade_level: str
+@app.post("/generate-flashcards")
+async def generate_flashcards(request: FlashCardRequest):
+    try:
+        # Get curriculum context
+        context_chunks = processor.get_subject_context(
+            query=f"Generate practice questions about {request.subject}",
+            subject=request.subject.lower(),
+            k=5  # Get more context for question generation
+        )
+        context = "\n".join(context_chunks)
+
+        # Generate flash cards using AI
+        prompt = f"""Generate 10 short question-answer pairs for {request.grade_level} level {request.subject} students.
+        Context from KICD materials: {context}
+        Format: Q: [question]\\nA: [answer]\\n\\n"""
+
+        response = client.chat.completions.create(
+            model="DeepSeek-V3",
+            messages=[
+                {"role": "system", "content": "You are a curriculum-aligned question generator"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000
+        )
+
+        # Parse the response into Q&A pairs
+        qa_pairs = []
+        current_q = None
+        for line in response.choices[0].message.content.split('\n'):
+            if line.startswith('Q:'):
+                current_q = line[3:].strip()
+            elif line.startswith('A:') and current_q:
+                qa_pairs.append({
+                    "question": current_q,
+                    "answer": line[3:].strip()
+                })
+                current_q = None
+        
+        return {"flashcards": qa_pairs[:10]}  # Return max 10 pairs
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
