@@ -1,10 +1,9 @@
-// components/ChatInterface.tsx
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import axios from 'axios'
+import axios, { CancelTokenSource } from 'axios'
 
 interface Message {
   content: string
@@ -24,8 +23,12 @@ export function ChatInterface({
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [recording, setRecording] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const cancelTokenSourceRef = useRef<CancelTokenSource | null>(null)
 
+  // Scroll to bottom when messages update
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -34,46 +37,119 @@ export function ChatInterface({
     scrollToBottom()
   }, [messages])
 
+  // Initialize Speech Recognition if available
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'en-US'
+      recognition.interimResults = false
+      recognition.maxAlternatives = 1
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        const transcript = event.results[0][0].transcript
+        setInput(transcript)
+      }
+
+      recognition.onend = () => {
+        setRecording(false)
+      }
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error)
+        setRecording(false)
+      }
+
+      recognitionRef.current = recognition
+    } else {
+      console.warn("Speech Recognition API not supported in this browser.")
+    }
+  }, [])
+
+  const handleRecord = () => {
+    if (recognitionRef.current) {
+      if (!recording) {
+        setRecording(true)
+        recognitionRef.current.start()
+      } else {
+        recognitionRef.current.stop()
+        setRecording(false)
+      }
+    }
+  }
+
+  // Cancel the ongoing request
+  const handleCancelRequest = () => {
+    if (cancelTokenSourceRef.current) {
+      cancelTokenSourceRef.current.cancel('Request cancelled by user.')
+      setIsLoading(false)
+    }
+  }
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!input.trim() || !grade || !subject) return
 
     // Add user message
-    setMessages(prev => [...prev, {
-      content: input,
-      isUser: true,
-      timestamp: new Date()
-    }])
+    setMessages(prev => [
+      ...prev,
+      {
+        content: input,
+        isUser: true,
+        timestamp: new Date()
+      }
+    ])
 
     const userInput = input
     setInput('')
     setIsLoading(true)
+
+    // Create a cancel token for this request
+    cancelTokenSourceRef.current = axios.CancelToken.source()
 
     try {
       const response = await axios.post('http://localhost:8000/ask', {
         question: userInput,
         grade_level: grade,
         subject
-      })
+      }, { cancelToken: cancelTokenSourceRef.current.token })
 
-      setMessages(prev => [...prev, {
-        content: response.data.response,
-        isUser: false,
-        timestamp: new Date()
-      }])
-    } catch (error) {
-      setMessages(prev => [...prev, {
-        content: 'Error getting response. Please try again.',
-        isUser: false,
-        timestamp: new Date()
-      }])
+      setMessages(prev => [
+        ...prev,
+        {
+          content: response.data.response,
+          isUser: false,
+          timestamp: new Date()
+        }
+      ])
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        setMessages(prev => [
+          ...prev,
+          {
+            content: 'Request cancelled by user.',
+            isUser: false,
+            timestamp: new Date()
+          }
+        ])
+      } else {
+        setMessages(prev => [
+          ...prev,
+          {
+            content: `Error getting response. Outside curriculum or ${subject} scope!!`,
+            isUser: false,
+            timestamp: new Date()
+          }
+        ])
+      }
     } finally {
       setIsLoading(false)
+      cancelTokenSourceRef.current = null
     }
   }
 
   return (
-    <div className="flex flex-col h-[600px] border rounded-lg p-4">
+    <div className="flex flex-col max-h-max border rounded-lg p-4">
       <ScrollArea className="flex-1 mb-4 pr-4">
         {messages.map((message, index) => (
           <div
@@ -105,7 +181,7 @@ export function ChatInterface({
         <div ref={messagesEndRef} />
       </ScrollArea>
 
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} className="flex gap-2 items-center">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -113,11 +189,28 @@ export function ChatInterface({
           disabled={!grade || !subject}
         />
         <Button
+          type="button"
+          onClick={handleRecord}
+          className="px-3"
+          disabled={!grade || !subject || isLoading}
+        >
+          {recording ? 'Stop' : 'Record'}
+        </Button>
+        <Button
           type="submit"
           disabled={!input.trim() || !grade || !subject || isLoading}
         >
           {isLoading ? 'Sending...' : 'Ask'}
         </Button>
+        {isLoading && (
+          <Button
+            type="button"
+            onClick={handleCancelRequest}
+            className="px-3 bg-red-600 text-white"
+          >
+            Stop Request
+          </Button>
+        )}
       </form>
     </div>
   )
