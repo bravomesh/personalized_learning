@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from curriculum_processor import CurriculumProcessor
 from safety_layer import SafetyLayer
 import os
+import re
 from openai import OpenAI
 
 app = FastAPI()
@@ -21,7 +22,9 @@ client = OpenAI(
 )
 
 processor = CurriculumProcessor()
-safety = SafetyLayer()
+
+ACCESS_TOKEN = ""
+safety = SafetyLayer(ACCESS_TOKEN)
 
 PDF_PATHS = [
     "curriculum/mathematics_secondary1.pdf",
@@ -30,8 +33,25 @@ PDF_PATHS = [
     "curriculum/physics_secondary.pdf",
     "curriculum/mathematics_secondary3.pdf",
     "curriculum/mathematics_secondary4.pdf",
+    "curriculum/chemistry_secondary.pdf",
+    "curriculum/kiswahili_secondaryFasihi.pdf",
+    "curriculum/kiswahili_secondaryInsha.pdf",
+    "curriculum/kiswahili_secondaryLuhga.pdf",
 ]
 processor.process_multiple_pdfs(PDF_PATHS)
+
+def clean_response(text: str) -> str:
+    # Remove markdown headers (e.g., ###)
+    text = re.sub(r'#+\s*', '', text)
+    
+    # Remove bold formatting (**text** or __text__)
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    
+    # Remove LaTeX-style equation brackets (\[ and \])
+    text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
+    
+    return text.strip()
 
 class QueryRequest(BaseModel):
     question: str
@@ -54,9 +74,9 @@ async def ask_question(request: QueryRequest):
 
         # Build system prompt with curriculum context
         system_prompt = f"""You are a {request.grade_level}-level educational assistant for Kenya. 
-        Respond using KICD-approved materials for {request.subject}. 
-        Curriculum Context: {context}"""
-    
+Respond using KICD-approved materials for {request.subject}. 
+Curriculum Context: {context}"""
+
         # Get AI response
         response = client.chat.completions.create(
             model="DeepSeek-V3",
@@ -68,17 +88,18 @@ async def ask_question(request: QueryRequest):
             max_tokens=500
         )
         
-        return {"response": response.choices[0].message.content}
+        cleaned_text = clean_response(response.choices[0].message.content)
+        return {"response": cleaned_text}
 
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
     
-    
 class FlashCardRequest(BaseModel):
     subject: str
     grade_level: str
+
 @app.post("/generate-flashcards")
 async def generate_flashcards(request: FlashCardRequest):
     try:
@@ -92,8 +113,8 @@ async def generate_flashcards(request: FlashCardRequest):
 
         # Generate flash cards using AI
         prompt = f"""Generate 10 short question-answer pairs for {request.grade_level} level {request.subject} students.
-        Context from KICD materials: {context}
-        Format: Q: [question]\\nA: [answer]\\n\\n"""
+Context from KICD materials: {context}
+Format: Q: [question]\\nA: [answer]\\n\\n"""
 
         response = client.chat.completions.create(
             model="DeepSeek-V3",
@@ -121,4 +142,4 @@ async def generate_flashcards(request: FlashCardRequest):
         return {"flashcards": qa_pairs[:10]}  # Return max 10 pairs
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"AI service error flashcards: {str(e)}")
